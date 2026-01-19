@@ -25,19 +25,27 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
+          command_timeout: 10m
           script: |
             echo "🚀 Starting deployment..."
             
             # Pull latest Docker image
             docker pull dakshkanaujia/url-shortener:latest
             
-            # Apply Kubernetes manifests
-            kubectl apply -f - <<EOF
+            # Create temp directory for manifests
+            mkdir -p ~/k8s-deploy
+            cd ~/k8s-deploy
+            
+            # Create namespace
+            cat > namespace.yaml <<'YAML'
             apiVersion: v1
             kind: Namespace
             metadata:
               name: url-shortener
-            ---
+            YAML
+            
+            # Create deployment
+            cat > deployment.yaml <<'YAML'
             apiVersion: apps/v1
             kind: Deployment
             metadata:
@@ -66,7 +74,10 @@ jobs:
                       limits:
                         memory: "256Mi"
                         cpu: "200m"
-            ---
+            YAML
+            
+            # Create service
+            cat > service.yaml <<'YAML'
             apiVersion: v1
             kind: Service
             metadata:
@@ -80,9 +91,14 @@ jobs:
               - port: 3000
                 targetPort: 3000
                 nodePort: 30080
-            EOF
+            YAML
             
-            # Wait for rollout to complete
+            # Apply manifests
+            kubectl apply -f namespace.yaml
+            kubectl apply -f deployment.yaml
+            kubectl apply -f service.yaml
+            
+            # Wait for rollout
             echo "⏳ Waiting for deployment rollout..."
             kubectl rollout status deployment/url-shortener -n url-shortener --timeout=3m
             
@@ -92,6 +108,7 @@ jobs:
             kubectl get svc -n url-shortener
             
             echo "✅ Deployment complete!"
+
       
       - name: Health Check
         run: |
